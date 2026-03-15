@@ -1,0 +1,68 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&family=Source+Sans+3:wght@300;400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 45 30% 97%;
+    --foreground: 25 15% 15%;
+    --card: 45 30% 97%;
+    --card-foreground: 25 15% 15%;
+    --popover: 45 30% 97%;
+    --popover-foreground: 25 15% 15%;
+    --primary: 35 60% 45%;
+    --primary-foreground: 45 30% 97%;
+    --secondary: 35 20% 92%;
+    --secondary-foreground: 25 15% 25%;
+    --muted: 35 20% 92%;
+    --muted-foreground: 25 10% 50%;
+    --accent: 35 20% 92%;
+    --accent-foreground: 25 15% 25%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 35 20% 88%;
+    --input: 35 20% 88%;
+    --ring: 35 60% 45%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 25 15% 8%;
+    --foreground: 45 30% 92%;
+    --card: 25 15% 10%;
+    --card-foreground: 45 30% 92%;
+    --popover: 25 15% 10%;
+    --popover-foreground: 45 30% 92%;
+    --primary: 35 60% 55%;
+    --primary-foreground: 25 15% 8%;
+    --secondary: 25 15% 15%;
+    --secondary-foreground: 45 30% 85%;
+    --muted: 25 15% 15%;
+    --muted-foreground: 25 10% 55%;
+    --accent: 25 15% 15%;
+    --accent-foreground: 45 30% 85%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 25 15% 18%;
+    --input: 25 15% 18%;
+    --ring: 35 60% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Source Sans 3', system-ui, sans-serif;
+  }
+  .font-display {
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+  .font-body {
+    font-family: 'Source Sans 3', system-ui, sans-serif;
+  }
+}
