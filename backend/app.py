@@ -1,11 +1,11 @@
-from unittest import result
-
 from flask import Flask, request, jsonify, Response, send_from_directory
 import os
 import uuid
-import time
 import json
+import base64
+import time
 import requests
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
 from google import genai
@@ -22,198 +22,136 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 AUDIXA_API_KEY = os.getenv("AUDIXA_API_KEY")
-GEMINI_PROMPT_GENERATOR = os.getenv("GEMINI_PROMPT_GENERATOR")
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
 
 print("[STARTUP] Gemini API key loaded:", bool(GEMINI_API_KEY))
 print("[STARTUP] Audixa API key loaded:", bool(AUDIXA_API_KEY))
-print("[STARTUP] Gemini Prompt Generator API key loaded:", bool(GEMINI_PROMPT_GENERATOR))
+print("[STARTUP] Together API key loaded:", bool(TOGETHER_API_KEY))
 
 MODEL = "gemini-2.5-flash"
-
+MAX_RETRIES = 3
+RETRY_DELAY = 2
 
 PROMPT = """
 You are the memory inside a photograph.
-<<<<<<< HEAD
-
-Observe the image carefully — the people, gestures, expressions, objects, light, and surroundings.
-
-Write a 150 word story in first person as if the memory itself is recalling the moment.
-
-The story should unfold naturally like a remembered scene.
-
-Structure the narrative in this order:
-
-1. Begin with vivid sensory details of the environment and atmosphere so the reader feels inside the moment.
-2. Gradually notice the people in the scene and describe their expressions, gestures, and interactions.
-3. Reflect on the relationships between them and the feeling of connection in the moment.
-4. End with a quiet realization about how time will change their lives and why this moment became meaningful.
-
-Writing guidelines:
-
- Focus on sensory details and small human moments.
- Avoid analytical or philosophical openings.
- Let meaning emerge gradually rather than explaining it early.
- Write as if the memory is gently guiding the reader through the scene.
- Maintain a nostalgic and reflective tone.
-Prefer simple, natural sentences over elaborate poetic metaphors.
-
-Return ONLY valid JSON with:
+Observe the image carefully and write a 320-380 word story in first person as if the memory itself is recalling the moment.
+Return ONLY valid JSON with no markdown fences:
 {
   "story": "...",
-  "scene_description": "...",
-  "mood": ["emotion1","emotion2","emotion3"]
+  "scene_description": "a short painterly visual description for image generation",
+  "mood": ["emotion1", "emotion2", "emotion3"]
 }
 """
 
 jobs = {}
+executor = ThreadPoolExecutor(max_workers=4)
 
 
-def get_imagen_client():
-    return genai.Client(api_key=GEMINI_API_KEY)
-
-
-<<<<<<< HEAD
-def generate_audio(text: str, job_id: str) -> str | None:
-    """Call Audixa TTS, save mp3 to results/, return relative URL or None on failure."""
-
+def generate_audio_with_retry(text: str, job_id: str, retry_tokens: list):
+    """Audixa TTS with up to MAX_RETRIES attempts. Returns (url_or_None, error_or_None)."""
     if not AUDIXA_API_KEY:
         print("[TTS] Skipping: AUDIXA_API_KEY not set.")
         return None, "AUDIXA_API_KEY not configured"
 
-<<<<<<< HEAD
-    print(f"[TTS] Generating audio for job {job_id}")
-
-    try:
-        # STEP 1 — Start generation
-        resp = requests.post(
-            "https://api.audixa.ai/v3/tts",
-            headers={
-                "x-api-key": AUDIXA_API_KEY,
-                "Content-Type": "application/json",
-            },
-            json={
-                "text": text,
-                "voice_id": "af_lily",
-                "model": "base"
-            },
-            timeout=120,
-        )
-
-        print(f"[TTS] POST status: {resp.status_code}")
-        print(f"[TTS] POST response: {resp.text}")
-
-        resp.raise_for_status()
-
-        generation_id = resp.json().get("generation_id")
-
-        if not generation_id:
-            print("[TTS] No generation_id returned")
-            return None
-
-        print(f"[TTS] Generation ID: {generation_id}")
-
-        # STEP 2 — Poll for completion
-        audio_url = None
-
-        for attempt in range(10):
-
-            print(f"[TTS] Checking generation status (attempt {attempt+1})")
-
-            status_resp = requests.get(
+    last_error = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        print(f"[TTS] Attempt {attempt}/{MAX_RETRIES} for job {job_id}")
+        try:
+            resp = requests.post(
                 "https://api.audixa.ai/v3/tts",
                 headers={
-                    "x-api-key": AUDIXA_API_KEY
+                    "Authorization": f"Bearer {AUDIXA_API_KEY}",
+                    "X-API-Key": AUDIXA_API_KEY,
+                    "Content-Type": "application/json",
                 },
-                params={
-                    "generation_id": generation_id
-                },
-                timeout=60,
+                json={"text": text, "voice_id": "af_lily", "model": "base", "format": "mp3"},
+                timeout=120,
             )
-            
-            status_data = status_resp.json()
-            
-            print("[TTS] Status response:", status_data)
+            print(f"[TTS] Status: {resp.status_code}")
+            if not resp.ok:
+                last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                print(f"[TTS] Error attempt {attempt}: {last_error}")
+                if attempt < MAX_RETRIES:
+                    retry_tokens.append(f"[AUDIO_RETRY:{attempt}]")
+                    time.sleep(RETRY_DELAY)
+                continue
 
-            status = status_data.get("status")
+            audio_path = os.path.join(RESULT_FOLDER, f"{job_id}.mp3")
+            with open(audio_path, "wb") as f:
+                f.write(resp.content)
+            print(f"[TTS] Saved: {audio_path}")
+            return f"/results/{job_id}.mp3", None
 
-            if status == "GENERATING":
-                time.sleep(1)
-                continue    
+        except Exception as e:
+            last_error = str(e)
+            print(f"[TTS] Exception attempt {attempt}: {e}")
+            if attempt < MAX_RETRIES:
+                retry_tokens.append(f"[AUDIO_RETRY:{attempt}]")
+                time.sleep(RETRY_DELAY)
 
-            if status == "COMPLETED":
-                audio_url = status_data.get("audio_url")
-                break
+    print(f"[TTS] All attempts failed. Last error: {last_error}")
+    return None, last_error
 
-            if status == "failed":
-                print("[TTS] Generation failed")
-                return None
 
-            time.sleep(1)
+def generate_illustration_with_retry(scene_description: str, job_id: str, retry_tokens: list):
+    """Together AI FLUX image gen with up to MAX_RETRIES attempts. Returns (url_or_None, error_or_None)."""
+    if not TOGETHER_API_KEY:
+        print("[IMG] Skipping: TOGETHER_API_KEY not set.")
+        return None, "TOGETHER_API_KEY not configured"
 
-        if not audio_url:
-            print("[TTS] Timeout waiting for audio")
-            return None
+    prompt = (
+        f"Painterly illustration, soft warm tones, nostalgic memory style, "
+        f"film grain, golden hour light: {scene_description}"
+    )
 
-        print(f"[TTS] Audio URL: {audio_url}")
+    last_error = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        print(f"[IMG] Attempt {attempt}/{MAX_RETRIES} for job {job_id}")
+        try:
+            resp = requests.post(
+                "https://api.together.xyz/v1/images/generations",
+                headers={
+                    "Authorization": f"Bearer {TOGETHER_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "black-forest-labs/FLUX.1-schnell-Free",
+                    "prompt": prompt,
+                    "width": 1024,
+                    "height": 1024,
+                    "steps": 4,
+                    "n": 1,
+                    "response_format": "b64_json",
+                },
+                timeout=120,
+            )
+            print(f"[IMG] Status: {resp.status_code}")
+            if not resp.ok:
+                last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                print(f"[IMG] Error attempt {attempt}: {last_error}")
+                if attempt < MAX_RETRIES:
+                    retry_tokens.append(f"[IMG_RETRY:{attempt}]")
+                    time.sleep(RETRY_DELAY)
+                continue
 
-        # STEP 3 — Download audio
-        audio_resp = requests.get(audio_url, timeout=60)
+            data = resp.json()
+            b64 = data["data"][0]["b64_json"]
+            img_path = os.path.join(RESULT_FOLDER, f"{job_id}.png")
+            with open(img_path, "wb") as f:
+                f.write(base64.b64decode(b64))
+            print(f"[IMG] Saved: {img_path}")
+            return f"/results/{job_id}.png", None
 
-        audio_path = os.path.join(RESULT_FOLDER, f"{job_id}.mp3")
+        except Exception as e:
+            last_error = str(e)
+            print(f"[IMG] Exception attempt {attempt}: {e}")
+            if attempt < MAX_RETRIES:
+                retry_tokens.append(f"[IMG_RETRY:{attempt}]")
+                time.sleep(RETRY_DELAY)
 
-        with open(audio_path, "wb") as f:
-            f.write(audio_resp.content)
+    print(f"[IMG] All attempts failed. Last error: {last_error}")
+    return None, last_error
 
-        print(f"[TTS] Audio saved to {audio_path}")
-
-        return f"/results/{job_id}.mp3"
-
-    except Exception as e:
-        print(f"[TTS] Audio generation failed: {e}")
-        return None
-
-def generate_illustration(scene_description: str, mood: list, job_id: str) -> str | None:
-    """Generate an illustration using Google's image model based on scene description."""
-
-    try:
-        client = genai.Client(api_key=GEMINI_PROMPT_GENERATOR)
-
-        # Enhance prompt slightly
-        mood_text = ", ".join(mood) if mood else "nostalgic"
-
-        prompt = f"""
-        Create a cinematic illustration of the following scene.
-
-        Scene:
-        {scene_description}
-
-        Mood:
-        {mood_text}
-
-        Style:
-        soft lighting, cinematic composition, emotional atmosphere,
-        highly detailed illustration, storytelling style, warm colors
-        """
-
-        response = client.models.generate_images(
-            model="imagen-3.0-generate-002",
-            prompt=prompt,
-        )
-
-        image_bytes = response.generated_images[0].image.image_bytes
-
-        image_path = os.path.join(RESULT_FOLDER, f"{job_id}.png")
-
-        with open(image_path, "wb") as f:
-            f.write(image_bytes)
-
-        print(f"[IMAGE] Illustration saved: {image_path}")
-
-        return f"/results/{job_id}.png"
-
-    except Exception as e:
-        print("[IMAGE] Generation failed:", e)
-        return "https://placehold.co/1024x1024"
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -250,57 +188,79 @@ def generate():
         return jsonify({"error": "Failed to init Gemini client"}), 500
 
     def stream_response():
-<<<<<<< HEAD
-        with open(image_path, "rb") as f:
-            image_bytes = f.read()
-
-        stream = client.models.generate_content_stream(
-            model=MODEL,
-            contents=[
-                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-                PROMPT,
-            ],
-        )
-
-        full_text = ""
-        for chunk in stream:
-            if chunk.text:
-                full_text += chunk.text
-                yield f"data: {chunk.text}\n\n"
-
-        text = full_text.strip()
-        if text.lower().startswith("json"):
-            text = text[4:].strip()
-
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        clean_json = text[start:end]
-
+        # ── 1. Stream Gemini text ──────────────────────────────────────────────
         try:
+            with open(image_path, "rb") as f:
+                image_bytes = f.read()
+
+            stream = client.models.generate_content_stream(
+                model=MODEL,
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                    PROMPT,
+                ],
+            )
+            full_text = ""
+            for chunk in stream:
+                if chunk.text:
+                    full_text += chunk.text
+                    yield f"data: {chunk.text}\n\n"
+
+        except Exception as e:
+            print(f"[GENERATE] Gemini stream error: {e}")
+            yield f"data: [ERROR:text:{str(e)[:100]}]\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        # ── 2. Parse JSON ──────────────────────────────────────────────────────
+        try:
+            text = full_text.strip()
+            if text.startswith("```"):
+                lines = text.split("\n")
+                text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            clean_json = text[start:end] if start != -1 else text
             result = json.loads(clean_json)
-        except Exception:
-            result = {"story": text, "scene_description": "", "mood": []}
-        scene_desc = result.get("scene_description", "")
-        mood = result.get("mood", [])
+        except Exception as e:
+            print(f"[JSON] Parse failed: {e} | Raw: {full_text[:300]}")
+            result = {"story": full_text, "scene_description": "", "mood": []}
 
-        illustration_url = generate_illustration(scene_desc, mood, job_id)
         story_text = result.get("story", "")
+        scene_text = result.get("scene_description", "")
 
-        # Signal frontend that TTS is now being generated
-        yield "data: [AUDIO_GENERATING]\n\n"
+        # ── 3. Signal frontend: media generation starting ─────────────────────
+        yield "data: [MEDIA_GENERATING]\n\n"
 
-        # Block here until audio is ready (or fails) — ensures audio_url is always present in result
-        audio_url = generate_audio(story_text, job_id)
+        # ── 4. Run audio + image in parallel ──────────────────────────────────
+        audio_retry_tokens = []
+        img_retry_tokens = []
+
+        audio_future = executor.submit(generate_audio_with_retry, story_text, job_id, audio_retry_tokens)
+        img_future = executor.submit(generate_illustration_with_retry, scene_text, job_id, img_retry_tokens)
+
+        audio_url, audio_err = audio_future.result(timeout=180)
+        img_url, img_err = img_future.result(timeout=180)
+
+        # Flush retry tokens collected during parallel execution
+        for tok in audio_retry_tokens:
+            yield f"data: {tok}\n\n"
+        for tok in img_retry_tokens:
+            yield f"data: {tok}\n\n"
+
+        # Status tokens
+        yield f"data: {'[AUDIO_OK]' if audio_url else '[AUDIO_FAILED:' + (audio_err or 'unknown')[:80] + ']'}\n\n"
+        yield f"data: {'[IMG_OK]' if img_url else '[IMG_FAILED:' + (img_err or 'unknown')[:80] + ']'}\n\n"
+
+        # ── 5. Persist and finish ──────────────────────────────────────────────
         jobs[job_id]["status"] = "done"
         jobs[job_id]["result"] = {
             "story": story_text,
-            "scene_description": result.get("scene_description", ""),
+            "scene_description": scene_text,
             "mood": result.get("mood", []),
-<<<<<<< HEAD
-            "illustration_url": "https://placehold.co/1024x1024",
-=======
             "illustration_url": img_url,
->>>>>>> b16a139e3f83b2a5533c10f63711d4fde46fd4c8
             "audio_url": audio_url,
         }
 
