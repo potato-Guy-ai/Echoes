@@ -28,7 +28,7 @@ You are the memory inside a photograph.
 
 Observe the image carefully — the people, gestures, expressions, objects, light, and surroundings.
 
-Write a 320–380 word story in first person as if the memory itself is recalling the moment.
+Write a 300–350 word story in first person as if the memory itself is recalling the moment.
 
 The story should unfold naturally like a remembered scene.
 
@@ -74,12 +74,17 @@ def generate_audio(text: str, job_id: str) -> str | None:
         return None
     try:
         resp = requests.post(
-            "https://api.audixa.ai/v1/tts",
+            "https://api.audixa.ai/v3/tts",
             headers={
                 "Authorization": f"Bearer {AUDIXA_API_KEY}",
                 "Content-Type": "application/json",
             },
-            json={"text": text, "voice": "en-US-female", "format": "mp3"},
+            json={
+                "text": text,
+                "voice_id": "af_lily",
+                "model": "base",
+                "format": "mp3"
+            },
             timeout=60,
         )
         resp.raise_for_status()
