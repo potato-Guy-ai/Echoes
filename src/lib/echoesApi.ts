@@ -2,19 +2,14 @@ export interface EchoesResult {
   story: string;
   scene_description: string;
   mood: string[];
-  illustration_url: string;
+  illustration_url: string | null;
   audio_url: string | null;
 }
 
 export async function uploadImage(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("image", file);
-
-  const res = await fetch("/upload", {
-    method: "POST",
-    body: formData,
-  });
-
+  const res = await fetch("/upload", { method: "POST", body: formData });
   if (!res.ok) throw new Error("Upload failed");
   const data = await res.json();
   return data.job_id as string;
@@ -53,11 +48,12 @@ export function streamGenerate(
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6);
+          const payload = line.slice(6).trim();
           if (payload === "[DONE]") {
             if (!cancelled) onDone();
             return;
           }
+          if (payload === "") continue;
           if (!cancelled) onToken(payload);
         }
       }
@@ -66,9 +62,7 @@ export function streamGenerate(
     }
   })();
 
-  return () => {
-    cancelled = true;
-  };
+  return () => { cancelled = true; };
 }
 
 export async function fetchResult(jobId: string): Promise<EchoesResult> {

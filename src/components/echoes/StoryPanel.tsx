@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { EchoesResult } from "@/lib/echoesApi";
 import { EchoesPhase } from "@/hooks/useEchoes";
-import { Volume2, Mic } from "lucide-react";
+import { Volume2, Mic, Image } from "lucide-react";
 
 interface StoryPanelProps {
   phase: EchoesPhase;
@@ -17,7 +17,6 @@ export function StoryPanel({ phase, streamedText, result }: StoryPanelProps) {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [streamedText]);
 
-  // Auto-play narration when audio becomes available
   useEffect(() => {
     if (result?.audio_url && audioRef.current) {
       audioRef.current.load();
@@ -30,7 +29,7 @@ export function StoryPanel({ phase, streamedText, result }: StoryPanelProps) {
   if (phase === "uploading") {
     return (
       <div className="flex items-center justify-center py-12 text-stone-400 animate-pulse">
-        <p className="font-body text-sm tracking-wide">Reading your photograph\u2026</p>
+        <p className="font-body text-sm tracking-wide">Reading your photograph...</p>
       </div>
     );
   }
@@ -64,51 +63,62 @@ export function StoryPanel({ phase, streamedText, result }: StoryPanelProps) {
         </p>
       </div>
 
-      {/* TTS loading state — shown while backend is generating audio */}
+      {/* Media generating loader — audio + illustration being created in parallel */}
       {phase === "narrating" && (
-        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
-          {/* Spinning circle */}
-          <svg
-            className="w-4 h-4 shrink-0 animate-spin text-amber-500"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12" cy="12" r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-            />
-          </svg>
-          <div className="flex items-center gap-2">
-            <Mic className="w-3.5 h-3.5 text-amber-600" />
-            <p className="font-body text-sm text-amber-700">
-              Generating narration\u2026 this may take a moment
+        <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <svg
+              className="w-4 h-4 shrink-0 animate-spin text-amber-500"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+            <p className="font-body text-sm text-amber-700 font-medium">
+              Creating your memory experience...
             </p>
           </div>
-          {/* Animated sound bars */}
-          <div className="ml-auto flex items-end gap-0.5 h-4">
-            {[1, 2, 3, 4].map((i) => (
-              <span
-                key={i}
-                className="w-1 rounded-full bg-amber-400"
-                style={{
-                  height: `${40 + i * 15}%`,
-                  animation: `pulse 1.2s ease-in-out ${i * 0.15}s infinite alternate`,
-                }}
-              />
-            ))}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex items-center gap-2 rounded-lg bg-amber-100/70 px-3 py-2">
+              <Mic className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <div>
+                <p className="text-xs font-body text-amber-800 font-medium">Narration</p>
+                <p className="text-xs font-body text-amber-600">Recording voice...</p>
+              </div>
+              <div className="ml-auto flex items-end gap-0.5 h-3">
+                {[1,2,3,4].map((i) => (
+                  <span
+                    key={i}
+                    className="w-0.5 rounded-full bg-amber-400"
+                    style={{
+                      height: `${50 + i * 12}%`,
+                      animation: `pulse 0.9s ease-in-out ${i * 0.18}s infinite alternate`,
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg bg-amber-100/70 px-3 py-2">
+              <Image className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <div>
+                <p className="text-xs font-body text-amber-800 font-medium">Illustration</p>
+                <p className="text-xs font-body text-amber-600">Painting scene...</p>
+              </div>
+              <div className="ml-auto">
+                <svg className="w-3 h-3 animate-spin text-amber-400" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+              </div>
+            </div>
           </div>
+          <p className="text-xs font-body text-amber-500 text-center">This usually takes 15 - 40 seconds</p>
         </div>
       )}
 
-      {/* Audio player — shown once audio is ready */}
+      {/* Audio player */}
       {result?.audio_url && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 text-xs font-body text-stone-400 uppercase tracking-widest">
@@ -142,10 +152,15 @@ export function StoryPanel({ phase, streamedText, result }: StoryPanelProps) {
 }
 
 function extractStory(raw: string): string {
+  // If it's clean prose (no JSON markers), return as-is
   if (!raw.includes('{') && !raw.includes('"story"')) return raw;
+  // Try to extract story field from partial/complete JSON
   const match = raw.match(/"story"\s*:\s*"((?:[^"\\]|\\.)*)/s);
   if (match) {
-    return match[1].replace(/\\n/g, "\n").replace(/\\r/g, "").replace(/\\"/g, '"');
+    return match[1]
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "")
+      .replace(/\\"/g, '"');
   }
   return raw;
 }

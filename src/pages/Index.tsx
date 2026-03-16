@@ -39,7 +39,6 @@ export default function Index() {
       />
 
       <div className="relative z-10 mx-auto max-w-4xl px-6 py-16">
-        {/* Header */}
         <motion.header
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -54,7 +53,6 @@ export default function Index() {
           </p>
         </motion.header>
 
-        {/* Main content */}
         <AnimatePresence mode="wait">
           {!isActive ? (
             <motion.div
@@ -74,7 +72,6 @@ export default function Index() {
               transition={{ duration: 0.6 }}
               className="space-y-10"
             >
-              {/* Error state */}
               {error && (
                 <div className="flex items-start gap-3 rounded-xl bg-red-50 border border-red-200 p-4 text-red-700">
                   <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
@@ -85,13 +82,13 @@ export default function Index() {
                 </div>
               )}
 
-              {/* Images side by side */}
+              {/* Pass phase so skeleton knows when to show spinner */}
               <IllustrationPanel
                 originalImage={previewUrl}
                 result={result}
+                phase={phase}
               />
 
-              {/* Story */}
               <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-stone-200/80 p-8 shadow-sm">
                 <StoryPanel
                   phase={phase}
@@ -100,7 +97,6 @@ export default function Index() {
                 />
               </div>
 
-              {/* Reset button */}
               {(phase === "done" || phase === "error") && (
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -121,6 +117,14 @@ export default function Index() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Shimmer keyframe */}
+      <style>{`
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+      `}</style>
     </div>
   );
 }
