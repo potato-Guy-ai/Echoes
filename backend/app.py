@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+# Load .env before anything else
+load_dotenv()
+
 app = Flask(__name__)
 
 UPLOAD_FOLDER = "uploads"
@@ -16,10 +19,12 @@ RESULT_FOLDER = "results"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 
-load_dotenv()
-
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 AUDIXA_API_KEY = os.getenv("AUDIXA_API_KEY")
+
+# Startup debug
+print("[STARTUP] Gemini API key loaded:", bool(GEMINI_API_KEY))
+print("[STARTUP] Audixa API key loaded:", bool(AUDIXA_API_KEY))
 
 MODEL = "gemini-2.5-flash"
 
@@ -71,27 +76,41 @@ def get_genai_client():
 def generate_audio(text: str, job_id: str) -> str | None:
     """Call Audixa TTS, save mp3 to results/, return relative URL or None on failure."""
     if not AUDIXA_API_KEY:
+        print("[TTS] Skipping: AUDIXA_API_KEY not set.")
         return None
+
+    print(f"[TTS] Generating audio for job {job_id} (key present: True)")
+
     try:
         resp = requests.post(
             "https://api.audixa.ai/v3/tts",
             headers={
                 "Authorization": f"Bearer {AUDIXA_API_KEY}",
+                "X-API-Key": AUDIXA_API_KEY,
                 "Content-Type": "application/json",
             },
             json={
                 "text": text,
                 "voice_id": "af_lily",
                 "model": "base",
-                "format": "mp3"
+                "format": "mp3",
             },
             timeout=60,
         )
-        resp.raise_for_status()
+
+        print(f"[TTS] Response status: {resp.status_code}")
+
+        if not resp.ok:
+            print(f"[TTS] Error response body: {resp.text}")
+            resp.raise_for_status()
+
         audio_path = os.path.join(RESULT_FOLDER, f"{job_id}.mp3")
         with open(audio_path, "wb") as f:
             f.write(resp.content)
+
+        print(f"[TTS] Audio saved to {audio_path}")
         return f"/results/{job_id}.mp3"
+
     except Exception as e:
         print(f"[TTS] Audio generation failed: {e}")
         return None
