@@ -1,7 +1,8 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_from_directory
 import os
 import uuid
 import json
+import requests
 from dotenv import load_dotenv
 
 from google import genai
@@ -18,6 +19,7 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+AUDIXA_API_KEY = os.getenv("AUDIXA_API_KEY")
 
 MODEL = "gemini-2.5-flash"
 
@@ -56,6 +58,7 @@ Return ONLY valid JSON with:
 
 jobs = {}
 
+
 def get_genai_client():
     header_key = request.headers.get("Authorization")
     if header_key and header_key.startswith("Bearer "):
@@ -63,6 +66,30 @@ def get_genai_client():
     else:
         api_key = GEMINI_API_KEY
     return genai.Client(api_key=api_key)
+
+
+def generate_audio(text: str, job_id: str) -> str | None:
+    """Call Audixa TTS, save mp3 to results/, return relative URL or None on failure."""
+    if not AUDIXA_API_KEY:
+        return None
+    try:
+        resp = requests.post(
+            "https://api.audixa.ai/v1/tts",
+            headers={
+                "Authorization": f"Bearer {AUDIXA_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={"text": text, "voice": "en-US-female", "format": "mp3"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        audio_path = os.path.join(RESULT_FOLDER, f"{job_id}.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(resp.content)
+        return f"/results/{job_id}.mp3"
+    except Exception as e:
+        print(f"[TTS] Audio generation failed: {e}")
+        return None
 
 
 @app.route("/upload", methods=["POST"])
@@ -117,12 +144,16 @@ def generate():
         except Exception:
             result = {"story": text, "scene_description": "", "mood": []}
 
+        story_text = result.get("story", "")
+        audio_url = generate_audio(story_text, job_id)
+
         jobs[job_id]["status"] = "done"
         jobs[job_id]["result"] = {
-            "story": result["story"],
-            "scene_description": result["scene_description"],
-            "mood": result["mood"],
+            "story": story_text,
+            "scene_description": result.get("scene_description", ""),
+            "mood": result.get("mood", []),
             "illustration_url": "https://placehold.co/1024x1024",
+            "audio_url": audio_url,
         }
 
         yield "data: [DONE]\n\n"
@@ -138,6 +169,11 @@ def result():
     if jobs[job_id]["status"] != "done":
         return jsonify({"status": "processing"})
     return jsonify(jobs[job_id]["result"])
+
+
+@app.route("/results/<path:filename>", methods=["GET"])
+def serve_result(filename):
+    return send_from_directory(os.path.abspath(RESULT_FOLDER), filename)
 
 
 if __name__ == "__main__":

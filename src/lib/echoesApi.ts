@@ -3,6 +3,7 @@ export interface EchoesResult {
   scene_description: string;
   mood: string[];
   illustration_url: string;
+  audio_url: string | null;
 }
 
 export async function uploadImage(file: File): Promise<string> {

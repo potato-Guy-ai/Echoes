@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { EchoesResult } from "@/lib/echoesApi";
 import { EchoesPhase } from "@/hooks/useEchoes";
+import { Volume2 } from "lucide-react";
 
 interface StoryPanelProps {
   phase: EchoesPhase;
@@ -10,10 +11,19 @@ interface StoryPanelProps {
 
 export function StoryPanel({ phase, streamedText, result }: StoryPanelProps) {
   const endRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [streamedText]);
+
+  // Auto-play narration when audio becomes available
+  useEffect(() => {
+    if (result?.audio_url && audioRef.current) {
+      audioRef.current.load();
+      audioRef.current.play().catch(() => {});
+    }
+  }, [result?.audio_url]);
 
   if (phase === "idle") return null;
 
@@ -48,11 +58,29 @@ export function StoryPanel({ phase, streamedText, result }: StoryPanelProps) {
       <div className="prose prose-stone prose-sm max-w-none">
         <p className="font-body text-stone-700 leading-relaxed whitespace-pre-wrap">
           {story}
-          {(phase === "generating") && (
+          {phase === "generating" && (
             <span className="inline-block w-1.5 h-4 bg-amber-500 ml-0.5 animate-pulse align-middle" />
           )}
         </p>
       </div>
+
+      {/* Audio player */}
+      {result?.audio_url && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 text-xs font-body text-stone-400 uppercase tracking-widest">
+            <Volume2 className="w-3.5 h-3.5" />
+            <span>Narration</span>
+          </div>
+          <audio
+            ref={audioRef}
+            controls
+            className="w-full h-10 rounded-lg accent-amber-600"
+            style={{ colorScheme: "light" }}
+          >
+            <source src={result.audio_url} type="audio/mpeg" />
+          </audio>
+        </div>
+      )}
 
       {/* Scene description */}
       {result?.scene_description && (
@@ -69,12 +97,8 @@ export function StoryPanel({ phase, streamedText, result }: StoryPanelProps) {
   );
 }
 
-/** Strip JSON wrapper if Gemini leaks it into the stream */
 function extractStory(raw: string): string {
-  // If we have a clean story from result, just return it
   if (!raw.includes('{') && !raw.includes('"story"')) return raw;
-
-  // Try to pull story field out of partial/complete JSON
   const match = raw.match(/"story"\s*:\s*"((?:[^"\\]|\\.)*)/s);
   if (match) {
     return match[1].replace(/\\n/g, "\n").replace(/\\r/g, "").replace(/\\"/g, '"');
