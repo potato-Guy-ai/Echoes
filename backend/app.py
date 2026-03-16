@@ -23,7 +23,6 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 AUDIXA_API_KEY = os.getenv("AUDIXA_API_KEY")
 
-# Startup debug
 print("[STARTUP] Gemini API key loaded:", bool(GEMINI_API_KEY))
 print("[STARTUP] Audixa API key loaded:", bool(AUDIXA_API_KEY))
 
@@ -47,11 +46,11 @@ Structure the narrative in this order:
 
 Writing guidelines:
 
-• Focus on sensory details and small human moments.
-• Avoid analytical or philosophical openings.
-• Let meaning emerge gradually rather than explaining it early.
-• Write as if the memory is gently guiding the reader through the scene.
-• Maintain a nostalgic and reflective tone.
+\u2022 Focus on sensory details and small human moments.
+\u2022 Avoid analytical or philosophical openings.
+\u2022 Let meaning emerge gradually rather than explaining it early.
+\u2022 Write as if the memory is gently guiding the reader through the scene.
+\u2022 Maintain a nostalgic and reflective tone.
 Prefer simple, natural sentences over elaborate poetic metaphors.
 
 Return ONLY valid JSON with:
@@ -96,7 +95,7 @@ def generate_audio(text: str, job_id: str) -> str | None:
                 "voice_id": "af_lily",
                 "model": "base"
             },
-            timeout=60,
+            timeout=120,
         )
 
         print(f"[TTS] POST status: {resp.status_code}")
@@ -226,6 +225,11 @@ def generate():
             result = {"story": text, "scene_description": "", "mood": []}
 
         story_text = result.get("story", "")
+
+        # Signal frontend that TTS is now being generated
+        yield "data: [AUDIO_GENERATING]\n\n"
+
+        # Block here until audio is ready (or fails) — ensures audio_url is always present in result
         audio_url = generate_audio(story_text, job_id)
         jobs[job_id]["status"] = "done"
         jobs[job_id]["result"] = {
