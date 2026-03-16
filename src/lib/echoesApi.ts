@@ -1,5 +1,3 @@
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
-
 export interface EchoesResult {
   story: string;
   scene_description: string;
@@ -11,7 +9,7 @@ export async function uploadImage(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("image", file);
 
-  const res = await fetch(`${BACKEND_URL}/upload`, {
+  const res = await fetch("/upload", {
     method: "POST",
     body: formData,
   });
@@ -31,7 +29,7 @@ export function streamGenerate(
 
   (async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/generate`, {
+      const res = await fetch("/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ job_id: jobId }),
@@ -73,7 +71,7 @@ export function streamGenerate(
 }
 
 export async function fetchResult(jobId: string): Promise<EchoesResult> {
-  const res = await fetch(`${BACKEND_URL}/result?job_id=${jobId}`);
+  const res = await fetch(`/result?job_id=${jobId}`);
   if (!res.ok) throw new Error("Failed to fetch result");
   return res.json() as Promise<EchoesResult>;
 }
