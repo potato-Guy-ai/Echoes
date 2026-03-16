@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, Response, send_from_directory
 import os
 import uuid
+import time
 import json
 import requests
 from dotenv import load_dotenv
@@ -33,7 +34,7 @@ You are the memory inside a photograph.
 
 Observe the image carefully — the people, gestures, expressions, objects, light, and surroundings.
 
-Write a 300–350 word story in first person as if the memory itself is recalling the moment.
+Write a 150 word story in first person as if the memory itself is recalling the moment.
 
 The story should unfold naturally like a remembered scene.
 
@@ -75,40 +76,96 @@ def get_genai_client():
 
 def generate_audio(text: str, job_id: str) -> str | None:
     """Call Audixa TTS, save mp3 to results/, return relative URL or None on failure."""
+
     if not AUDIXA_API_KEY:
         print("[TTS] Skipping: AUDIXA_API_KEY not set.")
         return None
 
-    print(f"[TTS] Generating audio for job {job_id} (key present: True)")
+    print(f"[TTS] Generating audio for job {job_id}")
 
     try:
+        # STEP 1 — Start generation
         resp = requests.post(
             "https://api.audixa.ai/v3/tts",
             headers={
-                "Authorization": f"Bearer {AUDIXA_API_KEY}",
-                "X-API-Key": AUDIXA_API_KEY,
+                "x-api-key": AUDIXA_API_KEY,
                 "Content-Type": "application/json",
             },
             json={
                 "text": text,
                 "voice_id": "af_lily",
-                "model": "base",
-                "format": "mp3",
+                "model": "base"
             },
             timeout=60,
         )
 
-        print(f"[TTS] Response status: {resp.status_code}")
+        print(f"[TTS] POST status: {resp.status_code}")
+        print(f"[TTS] POST response: {resp.text}")
 
-        if not resp.ok:
-            print(f"[TTS] Error response body: {resp.text}")
-            resp.raise_for_status()
+        resp.raise_for_status()
+
+        generation_id = resp.json().get("generation_id")
+
+        if not generation_id:
+            print("[TTS] No generation_id returned")
+            return None
+
+        print(f"[TTS] Generation ID: {generation_id}")
+
+        # STEP 2 — Poll for completion
+        audio_url = None
+
+        for attempt in range(5):
+
+            print(f"[TTS] Checking generation status (attempt {attempt+1})")
+
+            status_resp = requests.get(
+                "https://api.audixa.ai/v3/tts",
+                headers={
+                    "x-api-key": AUDIXA_API_KEY
+                },
+                params={
+                    "generation_id": generation_id
+                },
+                timeout=60,
+            )
+            
+            status_data = status_resp.json()
+            
+            print("[TTS] Status response:", status_data)
+
+            status = status_data.get("status")
+
+            if status == "GENERATING":
+                time.sleep(1)
+                continue    
+
+            if status == "COMPLETED":
+                audio_url = status_data.get("audio_url")
+                break
+
+            if status == "failed":
+                print("[TTS] Generation failed")
+                return None
+
+            time.sleep(1)
+
+        if not audio_url:
+            print("[TTS] Timeout waiting for audio")
+            return None
+
+        print(f"[TTS] Audio URL: {audio_url}")
+
+        # STEP 3 — Download audio
+        audio_resp = requests.get(audio_url, timeout=60)
 
         audio_path = os.path.join(RESULT_FOLDER, f"{job_id}.mp3")
+
         with open(audio_path, "wb") as f:
-            f.write(resp.content)
+            f.write(audio_resp.content)
 
         print(f"[TTS] Audio saved to {audio_path}")
+
         return f"/results/{job_id}.mp3"
 
     except Exception as e:
@@ -170,7 +227,6 @@ def generate():
 
         story_text = result.get("story", "")
         audio_url = generate_audio(story_text, job_id)
-
         jobs[job_id]["status"] = "done"
         jobs[job_id]["result"] = {
             "story": story_text,
