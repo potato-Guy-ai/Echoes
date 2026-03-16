@@ -5,6 +5,7 @@ export type EchoesPhase =
   | "idle"
   | "uploading"
   | "generating"
+  | "narrating"   // TTS is being generated on the backend
   | "done"
   | "error";
 
@@ -28,6 +29,11 @@ export function useEchoes() {
       cancelRef.current = streamGenerate(
         jobId,
         (token) => {
+          // [AUDIO_GENERATING] is a control token — switch phase, don't append to text
+          if (token.trim() === "[AUDIO_GENERATING]") {
+            setPhase("narrating");
+            return;
+          }
           setStreamedText((prev) => prev + token);
         },
         async () => {
