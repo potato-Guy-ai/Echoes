@@ -1,5 +1,3 @@
-from unittest import result
-
 from flask import Flask, request, jsonify, Response, send_from_directory
 import os
 import uuid
@@ -24,14 +22,11 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 AUDIXA_API_KEY = os.getenv("AUDIXA_API_KEY")
-GEMINI_PROMPT_GENERATOR = os.getenv("GEMINI_PROMPT_GENERATOR")
 
 print("[STARTUP] Gemini API key loaded:", bool(GEMINI_API_KEY))
 print("[STARTUP] Audixa API key loaded:", bool(AUDIXA_API_KEY))
-print("[STARTUP] Gemini Prompt Generator API key loaded:", bool(GEMINI_PROMPT_GENERATOR))
 
 MODEL = "gemini-2.5-flash"
-
 
 PROMPT = """
 You are the memory inside a photograph.
@@ -176,48 +171,7 @@ def generate_audio(text: str, job_id: str) -> str | None:
         print(f"[TTS] Audio generation failed: {e}")
         return None
 
-def generate_illustration(scene_description: str, mood: list, job_id: str) -> str | None:
-    """Generate an illustration using Google's image model based on scene description."""
 
-    try:
-        client = genai.Client(api_key=GEMINI_PROMPT_GENERATOR)
-
-        # Enhance prompt slightly
-        mood_text = ", ".join(mood) if mood else "nostalgic"
-
-        prompt = f"""
-        Create a cinematic illustration of the following scene.
-
-        Scene:
-        {scene_description}
-
-        Mood:
-        {mood_text}
-
-        Style:
-        soft lighting, cinematic composition, emotional atmosphere,
-        highly detailed illustration, storytelling style, warm colors
-        """
-
-        response = client.models.generate_images(
-            model="imagen-3.0-generate-002",
-            prompt=prompt,
-        )
-
-        image_bytes = response.generated_images[0].image.image_bytes
-
-        image_path = os.path.join(RESULT_FOLDER, f"{job_id}.png")
-
-        with open(image_path, "wb") as f:
-            f.write(image_bytes)
-
-        print(f"[IMAGE] Illustration saved: {image_path}")
-
-        return f"/results/{job_id}.png"
-
-    except Exception as e:
-        print("[IMAGE] Generation failed:", e)
-        return "https://placehold.co/1024x1024"
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -270,10 +224,7 @@ def generate():
             result = json.loads(clean_json)
         except Exception:
             result = {"story": text, "scene_description": "", "mood": []}
-        scene_desc = result.get("scene_description", "")
-        mood = result.get("mood", [])
 
-        illustration_url = generate_illustration(scene_desc, mood, job_id)
         story_text = result.get("story", "")
 
         # Signal frontend that TTS is now being generated
@@ -286,7 +237,7 @@ def generate():
             "story": story_text,
             "scene_description": result.get("scene_description", ""),
             "mood": result.get("mood", []),
-            "illustration_url": illustration_url,
+            "illustration_url": "https://placehold.co/1024x1024",
             "audio_url": audio_url,
         }
 
