@@ -1,3 +1,5 @@
+from unittest import result
+
 from flask import Flask, request, jsonify, Response, send_from_directory
 import os
 import uuid
@@ -9,27 +11,29 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# Load .env before anything else
 load_dotenv()
 
 app = Flask(__name__)
 
 UPLOAD_FOLDER = "uploads"
 RESULT_FOLDER = "results"
-
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 AUDIXA_API_KEY = os.getenv("AUDIXA_API_KEY")
+GEMINI_PROMPT_GENERATOR = os.getenv("GEMINI_PROMPT_GENERATOR")
 
 print("[STARTUP] Gemini API key loaded:", bool(GEMINI_API_KEY))
 print("[STARTUP] Audixa API key loaded:", bool(AUDIXA_API_KEY))
+print("[STARTUP] Gemini Prompt Generator API key loaded:", bool(GEMINI_PROMPT_GENERATOR))
 
 MODEL = "gemini-2.5-flash"
 
+
 PROMPT = """
 You are the memory inside a photograph.
+<<<<<<< HEAD
 
 Observe the image carefully — the people, gestures, expressions, objects, light, and surroundings.
 
@@ -64,22 +68,19 @@ Return ONLY valid JSON with:
 jobs = {}
 
 
-def get_genai_client():
-    header_key = request.headers.get("Authorization")
-    if header_key and header_key.startswith("Bearer "):
-        api_key = header_key.split(" ")[1]
-    else:
-        api_key = GEMINI_API_KEY
-    return genai.Client(api_key=api_key)
+def get_imagen_client():
+    return genai.Client(api_key=GEMINI_API_KEY)
 
 
+<<<<<<< HEAD
 def generate_audio(text: str, job_id: str) -> str | None:
     """Call Audixa TTS, save mp3 to results/, return relative URL or None on failure."""
 
     if not AUDIXA_API_KEY:
         print("[TTS] Skipping: AUDIXA_API_KEY not set.")
-        return None
+        return None, "AUDIXA_API_KEY not configured"
 
+<<<<<<< HEAD
     print(f"[TTS] Generating audio for job {job_id}")
 
     try:
@@ -171,30 +172,85 @@ def generate_audio(text: str, job_id: str) -> str | None:
         print(f"[TTS] Audio generation failed: {e}")
         return None
 
+def generate_illustration(scene_description: str, mood: list, job_id: str) -> str | None:
+    """Generate an illustration using Google's image model based on scene description."""
 
+    try:
+        client = genai.Client(api_key=GEMINI_PROMPT_GENERATOR)
+
+        # Enhance prompt slightly
+        mood_text = ", ".join(mood) if mood else "nostalgic"
+
+        prompt = f"""
+        Create a cinematic illustration of the following scene.
+
+        Scene:
+        {scene_description}
+
+        Mood:
+        {mood_text}
+
+        Style:
+        soft lighting, cinematic composition, emotional atmosphere,
+        highly detailed illustration, storytelling style, warm colors
+        """
+
+        response = client.models.generate_images(
+            model="imagen-3.0-generate-002",
+            prompt=prompt,
+        )
+
+        image_bytes = response.generated_images[0].image.image_bytes
+
+        image_path = os.path.join(RESULT_FOLDER, f"{job_id}.png")
+
+        with open(image_path, "wb") as f:
+            f.write(image_bytes)
+
+        print(f"[IMAGE] Illustration saved: {image_path}")
+
+        return f"/results/{job_id}.png"
+
+    except Exception as e:
+        print("[IMAGE] Generation failed:", e)
+        return "https://placehold.co/1024x1024"
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    file = request.files["image"]
-    job_id = str(uuid.uuid4())
-    filepath = os.path.join(UPLOAD_FOLDER, f"{job_id}.jpg")
-    file.save(filepath)
-    jobs[job_id] = {"status": "uploaded", "image_path": filepath}
-    return jsonify({"job_id": job_id})
+    try:
+        file = request.files["image"]
+        job_id = str(uuid.uuid4())
+        filepath = os.path.join(UPLOAD_FOLDER, f"{job_id}.jpg")
+        file.save(filepath)
+        jobs[job_id] = {"status": "uploaded", "image_path": filepath}
+        return jsonify({"job_id": job_id})
+    except Exception as e:
+        print(f"[UPLOAD] Error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/generate", methods=["POST"])
 def generate():
-    data = request.json
-    job_id = data["job_id"]
+    try:
+        data = request.json
+        job_id = data["job_id"]
+    except Exception as e:
+        print(f"[GENERATE] Bad request: {e}")
+        return jsonify({"error": "Invalid request"}), 400
 
     if job_id not in jobs:
         return jsonify({"error": "invalid job id"}), 404
 
     image_path = jobs[job_id]["image_path"]
-    client = get_genai_client()
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        print(f"[GENERATE] Client init failed: {e}")
+        return jsonify({"error": "Failed to init Gemini client"}), 500
 
     def stream_response():
+<<<<<<< HEAD
         with open(image_path, "rb") as f:
             image_bytes = f.read()
 
@@ -224,7 +280,10 @@ def generate():
             result = json.loads(clean_json)
         except Exception:
             result = {"story": text, "scene_description": "", "mood": []}
+        scene_desc = result.get("scene_description", "")
+        mood = result.get("mood", [])
 
+        illustration_url = generate_illustration(scene_desc, mood, job_id)
         story_text = result.get("story", "")
 
         # Signal frontend that TTS is now being generated
@@ -237,7 +296,11 @@ def generate():
             "story": story_text,
             "scene_description": result.get("scene_description", ""),
             "mood": result.get("mood", []),
+<<<<<<< HEAD
             "illustration_url": "https://placehold.co/1024x1024",
+=======
+            "illustration_url": img_url,
+>>>>>>> b16a139e3f83b2a5533c10f63711d4fde46fd4c8
             "audio_url": audio_url,
         }
 
